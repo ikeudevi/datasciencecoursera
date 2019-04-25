@@ -1,0 +1,147 @@
+---
+title: "Practical Machine Learning Course Project"
+author: Ike
+date: "`r Sys.Date()`"
+output: html_document
+fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE)
+```
+
+# Introduction
+In this project, a group of health enthusiasts took measurements while they performed various activities intended to 
+improve their personal well being. *The goal of this project is to build a model that describes how well each person 
+performed each of the different activities, validate the model and subsequently, apply the model on a test data to determine well the model generalizes to unseen data.*
+
+## Data Partitioning and Training the Model
+
+The training and test data were downloaded from  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv 
+and https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv respectively. The training data consists of *19622 observations of 53 variables including the "classe" variable (the response variable).* Two classification algorithms were used to describe the data. First, *rpart* with three repeats of 10-fold cross validation and, a *random forest* method. *Initially, the rpart algorithm was used with all 52 independent variables as predictors. Then, with a  variable importance function, the 52 predictors were sorted in order of how well each contributed to model performance and 20 of the best performing predictors were selected* 
+
+The *rpart* algorithm was applied again to the training dataset using these 20 predictors. Finally, the *random forest* algorithm was applied to the training dataset also with the 20 predictors. The prediction function from each of the three approaches were used to predict the testing dataset. And, based on the performance of each on the
+testing data, an optimal model was chosen amongst the three. 
+
+```{r setup, pml-training, echo=FALSE, highlight=TRUE, fig.align='center'}
+knitr::opts_chunk$set(echo=TRUE, cache = TRUE, warning = FALSE, message = FALSE)
+  library(caret)
+  library(rpart)
+  library(rattle)
+  library(readr)
+  library(randomForest)
+  library(dplyr)
+#read in data as a data frame and convert class variable to a factor
+training <- read.csv("pml-training.csv", stringsAsFactors=FALSE, header=TRUE)
+training <- data.frame(training)
+training$classe <- as.factor(training$classe)
+#str(training)
+#Partition data into training and testing data sets.
+inTrain <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+trainingSet <- training[inTrain,]
+testingSet  <- training[-inTrain, ]
+```
+----------------------------------------
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+str(training)
+
+```
+----------------------------------------
+
+```{r echo=TRUE, warning=FALSE, message=FALSE}
+#Data Analysis with "rpart" using all 52 predictor variables
+#
+set.seed(123)
+ctrl <- trainControl(method="repeatedcv", repeats = 3, classProbs = TRUE, summaryFunction = defaultSummary)
+#
+ModelFit1 <- train(classe  ~ ., data=trainingSet, method="rpart", preProc = c("center", "scale"), tuneLength = 15, trControl = ctrl, metric="Accuracy")
+Predictions1 <- predict(ModelFit1, newdata=testingSet)
+table(Predictions1, testingSet$classe)
+#
+varImp(ModelFit1)
+print(ModelFit1)
+#
+fancyRpartPlot(ModelFit1$finalModel, main="A classification of the factors", sub= "Figure 1")
+#
+#The following 20 predictors were identified as significant in predicting user activity. 
+
+myvariables <- c("pitch_forearm","accel_forearm_x","magnet_arm_x", "magnet_arm_y", "accel_arm_x", "pitch_dumbbell",
+                  "magnet_forearm_x","magnet_belt_y","magnet_dumbbell_x","magnet_dumbbell_y","roll_dumbbell",
+     "accel_dumbbell_x", "magnet_dumbbell_z", "magnet_arm_z", "magnet_belt_z", "pitch_arm", "roll_belt",
+     "yaw_dumbbell", "accel_dumbbell_y", "accel_dumbbell_z", "classe")
+
+#
+#Re-partitioning training data into training and testdatasets using the selected 20 variables
+
+Newtraining <- training[myvariables]
+inTrain1 <- createDataPartition(y=Newtraining$classe, p=0.7, list=FALSE)
+trainingSet1 <- Newtraining[inTrain1,]
+testingSet1  <- Newtraining[-inTrain1, ]
+#
+# rpart applied to training set using the 20 selected predictor variables
+
+ModelFit2 <- train(classe  ~ ., data=trainingSet1, method="rpart", preProc = c("center", "scale"), tuneLength = 15, trControl = ctrl, metric="Accuracy")
+Predictions2 <- predict(ModelFit2, newdata=testingSet1)
+table(Predictions2,testingSet1$classe)
+
+#
+# randomForest method applied to training set using the 20 selected predictor variables
+#
+RandmFit <- randomForest(classe  ~ ., data=trainingSet1, importance=TRUE,proximity=TRUE)
+RandmFit
+#
+PredictionsF <- predict(RandmFit, newdata=testingSet1)
+table(PredictionsF, testingSet1$classe)
+#
+#Model Accuracy of the random forest method with the 20 variables
+
+ConfMatrix <- confusionMatrix(PredictionsF,testingSet1$classe)
+ConfMatrix$overall[1:5]
+#
+#Comparatively, the distribution of the "classe" variables is shown below
+
+table(testingSet1$classe)
+
+#Testing
+#Read in the test data : "pml-testing.csv""
+testing <- read.csv("pml-testing.csv", stringsAsFactors=FALSE, header=TRUE)
+
+#Predictions with rpart using 52 variables
+Predictions1 <- predict(ModelFit1, newdata=testing)
+table(Predictions1)
+
+#
+#Predictions with rpart using selected 20 variables
+Predictions2 <- predict(ModelFit2, newdata=testing)
+table(Predictions2)
+#
+#Predictions with randomForest using selected 20 variables
+FinalPredictionF <- predict(RandmFit, newdata=testing)
+table(FinalPredictionF)
+#
+
+```
+
+---------------------------------------------
+
+## Observations and Comments
+
+Initial classification of the training data using *method=rpart* with all 52 predictors yielded an accuracy of 75.8%. 
+With varImp(ModelFit1), the 52 variables were sorted in order of their predictive usefullness across the 5 classes and
+20 variables were selected as most important in classifying the factors. The 20 variables were subsequently used to 
+classify the factors again. First with *rpart* algorithm again with an accuracy of 75.15%. While there was no significant 
+gain in accuracy between the two *rpart methods*, the difference in number of predictors for the two approaches, 
+recommends the second method. 
+
+The *randomForest* method was also used to classify the dataset using the 20 significant variables. This yielded 
+an accuracy of 97.96%.This result is substantially better than the two previous methods. Based, on this performance and,
+especially given that this result was also obtained with far fewer variables, *the randomForest method* was deemed a better
+method for future analysis.
+
+----------------------------------------------
+
+## Conclusion
+
+Based on the accuracy of each method especially when using the fewest number of predictors (20 predoictors), the random forest 
+method was deemed as best for predicting how well each of the participants performed the different activities.
+
